@@ -1,0 +1,831 @@
+#include <IRremote.h>
+
+#include <Servo.h>  // Include Servo library for servo control
+
+
+
+
+
+// Define the pin connected to the IR receiver
+
+const int IR_RECEIVE_PIN = 9;
+
+const int trigPIN = 13;  // Ultrasonic sensor trigger pin
+
+const int echoPIN = 12;  // Ultrasonic sensor echo pin
+
+// Define pin numbers for motor control
+
+const int AIN = 7;       // AIN (right side)
+
+const int left_BIN = 8;  // Renamed from BIN to left_BIN (left side)
+
+const int PWMA = 5;      // PWMA
+
+const int PWMB = 6;      // PWMB
+
+const int STBY = 3;      // STBY
+
+Servo myservo;
+
+
+
+
+
+// Line tracker sensor pins
+
+const int right_TRACKER = A0;
+
+const int LINE_TRACKER = A1;
+
+const int left_TRACKER = A2;
+
+float distance = 0;        // Distance from ultrasonic sensor
+
+const int threshold = 35;  // Obstacle distance threshold in cm
+
+int pos = 90;
+
+int post = 0;
+
+// Define button codes for IR remote
+
+#define BUTTON_OK 0xBF40FF00     // Stop the car
+
+#define BUTTON_UP 0xB946FF00     // Move forward at full speed
+
+#define BUTTON_DOWN 0xEA15FF00   // Move backward at full speed
+
+#define BUTTON_left 0xBB44FF00   //  left at full speed
+
+#define BUTTON_right 0xBC43FF00  //  right at full speed
+
+#define BUTTON_1 0xE916FF00      // Move forward at half speed
+
+#define BUTTON_2 0xE619FF00      // Move backward at half speed
+
+#define BUTTON_3 0xF20DFF00      //  left at half speed
+
+#define BUTTON_4 0xF30CFF00      //  right at half speed
+
+#define BUTTON_5 0xE718FF00      // Activate Line Tracking Mode
+
+#define BUTTON_6 0xA15EFF00      //  right at quarter speed
+
+#define BUTTON_7 0xF708FF00      //  left at quarter speed
+
+#define BUTTON_8 0xE31CFF00      // Move backward at quarter speed
+
+#define BUTTON_9 0xA55AFF00      // Move forward at quarter speed
+
+#define BUTTON_STAR 0xBD42FF00   // Custom action: Spin in place
+
+#define BUTTON_0 0xAD52FF00      // Custom action: Circle movement
+
+#define BUTTON_HASH 0xB54AFF00   // Stop and deactivate line tracking
+
+#define BUTTON_crazy 0x0
+
+
+
+
+
+bool lineTrackingMode = false;  // Toggle for line tracking mode
+
+
+
+
+
+bool avoidMode = false;
+
+
+
+
+
+
+
+bool avoidModel = false;
+
+
+
+
+
+void setup() {
+
+  Serial.begin(9600);
+
+  IrReceiver.begin(IR_RECEIVE_PIN, ENABLE_LED_FEEDBACK);  // Initialize the receiver
+
+  Serial.println("IR Receiver Initialized. Waiting for input...");
+
+  pinMode(right_TRACKER, INPUT);
+
+  pinMode(LINE_TRACKER, INPUT);
+
+  pinMode(left_TRACKER, INPUT);
+
+  myservo.attach(10);  // Attach servo to pin 10
+
+  myservo.write(90);   // Center servo
+
+  delay(500);
+
+}
+
+void loop() {
+
+  if (IrReceiver.decode()) {
+
+    Serial.print("Received HEX Value: ");
+
+    Serial.println(IrReceiver.decodedIRData.decodedRawData, HEX);
+
+
+
+
+
+    // Map buttons to functions
+
+    switch (IrReceiver.decodedIRData.decodedRawData) {
+
+      case BUTTON_UP:
+
+        forward(255);  // Move forward at full speed
+
+        break;
+
+      case BUTTON_DOWN:
+
+        backward(255);  // Move backward at full speed
+
+        break;
+
+      case BUTTON_left:
+
+        left(100);  //  left at full speed
+
+        break;
+
+      case BUTTON_right:
+
+        right(100);  //  right at full speed
+
+        break;
+
+      case BUTTON_OK:
+
+        stopped();  // Stop the car
+
+        lineTrackingMode = false;
+
+        avoidMode = false;
+
+        avoidModel = false;
+
+        break;
+
+      case BUTTON_1:
+
+        leftforward(128);  // Move forward at half speed
+
+        break;
+
+      case BUTTON_2:
+
+        avoidMode = !avoidMode;
+
+        Serial.println(avoidMode ? "avoid Mode Activated" : "avoid Mode Deactivated");
+
+        stopped();  // Stop the car when switching modes
+
+        break;
+
+      case BUTTON_3:
+
+        rightforward(128);  //  left at half speed
+
+        break;
+
+      case BUTTON_4:
+
+        right(128);  //  right at half speed
+
+        break;
+
+      case BUTTON_5:
+
+        lineTrackingMode = !lineTrackingMode;
+
+        Serial.println(lineTrackingMode ? "Line Tracking Mode Activated" : "Line Tracking Mode Deactivated");
+
+        stopped();  // Stop the car when switching modes
+
+        break;
+
+      case BUTTON_6:
+
+        dance(64);  //  right at quarter speed
+
+        break;
+
+      case BUTTON_7:
+
+        leftbackward(64);  //  left at quarter speed
+
+        break;
+
+      case BUTTON_8:
+
+        avoidModel = !avoidModel;
+
+        Serial.println(avoidModel ? "avoid Mode Activated" : "avoid Model Deactivated");
+
+        stopped();  // Stop the car when switching modes
+
+        break;
+
+      case BUTTON_9:
+
+        rightbackward(64);  // Move forward at quarter speed
+
+        break;
+
+      case BUTTON_STAR:
+
+        spin(120);  // Spin in place
+
+        break;
+
+      case BUTTON_0:
+
+        v_lap(120);  // Circle movement
+
+        break;
+
+      case BUTTON_crazy:
+
+        delay(5);  // Circle movement
+
+        break;
+
+      case BUTTON_HASH:
+
+        lineTrackingMode = false;  // Deactivate line tracking
+
+        Serial.println("Line Tracking Mode Deactivated");
+
+        stopped();
+
+        break;
+
+      default:
+
+        stopped();  // Default: stop the car if no recognized button
+
+    }
+
+
+
+
+
+    IrReceiver.resume();  // Prepare to receive the next signal
+
+  }
+
+  if (lineTrackingMode == true) {
+
+    // Line tracker sensor readings
+
+    int right_tracker_value = analogRead(right_TRACKER);
+
+    int line_tracker_value = analogRead(LINE_TRACKER);
+
+    int left_tracker_value = analogRead(left_TRACKER);
+
+
+
+
+
+    // Print sensor values
+
+    Serial.print("\tReceived right_tracker: ");
+
+    Serial.print(right_tracker_value);
+
+    Serial.print("\tReceived line_tracker: ");
+
+    Serial.print(line_tracker_value);
+
+    Serial.print("\tReceived left_tracker: ");
+
+    Serial.println(left_tracker_value);
+
+
+
+
+
+    // Line tracking logic
+
+    if (line_tracker_value >= 700 && line_tracker_value <= 900) {
+
+      forward(50);
+
+      //IrReceiver.resume();  // Prepare to receive the next signal // Move forward if the line sensor detects the line
+
+    } else if (left_tracker_value > 700 && line_tracker_value <= 700) {
+
+      left(50);
+
+      // IrReceiver.resume();  // Prepare to receive the next signal //  left if the left sensor detects the line
+
+    } else if (right_tracker_value > 700 && line_tracker_value <= 700) {
+
+      right(50);
+
+      //IrReceiver.resume();  // Prepare to receive the next signal //  right if the right sensor detects the line
+
+    } else if (right_tracker_value >= 1000 && line_tracker_value >= 1000 && left_tracker_value >= 1000) {
+
+      stopped();  // Stop if no line is detected by any sensor
+
+                  // IrReceiver.resume();  // Prepare to receive the next signal
+
+    }
+
+  }
+
+  if (avoidMode == true) {
+
+    sensor();  // Check distance using ultrasonic sensor
+
+
+
+
+
+    delay(500);
+
+
+
+
+
+    if (distance > threshold) {
+
+      forward(60);  // Move forward if no obstacle
+
+    } else {
+
+      stopped();           // Stop the car if obstacle detected
+
+      myservo.write(180);  // Turn servo to left
+
+      delay(500);
+
+      sensor();
+
+      if (distance > threshold) {
+
+        left(120);          // Turn left if no obstacle on the left
+
+        myservo.write(90);  // Reset servo to center
+
+        delay(500);
+
+        forward(70);  // Move forward
+
+      } else {
+
+        // Check right
+
+        myservo.write(0);  // Turn servo to right
+
+        delay(500);
+
+        sensor();
+
+        if (distance > threshold) {
+
+          right(120);         // Turn right if no obstacle on the right
+
+          myservo.write(90);  // Reset servo to center
+
+          delay(500);
+
+          forward(60);  // Move forward
+
+        } else {
+
+          // Reverse and re-evaluate
+
+          myservo.write(90);  // Turn servo backward
+
+          delay(500);
+
+          sensor();
+
+          backward(70);  // Move backward
+
+          delay(1000);   // Reverse for 1 second
+
+          right(200);
+
+          stopped();  // Stop to re-evaluate
+
+        }
+
+      }
+
+    }
+
+  }
+
+  if (lineTrackingMode == true) {
+
+    // Line tracker sensor readings
+
+    int right_tracker_value = analogRead(right_TRACKER);
+
+    int line_tracker_value = analogRead(LINE_TRACKER);
+
+    int left_tracker_value = analogRead(left_TRACKER);
+
+
+
+
+
+    // Print sensor values
+
+    Serial.print("\tReceived right_tracker: ");
+
+    Serial.print(right_tracker_value);
+
+    Serial.print("\tReceived line_tracker: ");
+
+    Serial.print(line_tracker_value);
+
+    Serial.print("\tReceived left_tracker: ");
+
+    Serial.println(left_tracker_value);
+
+
+
+
+
+    // Line tracking logic
+
+    if (line_tracker_value >= 700 && line_tracker_value <= 900) {
+
+      forward(50);
+
+      //IrReceiver.resume();  // Prepare to receive the next signal // Move forward if the line sensor detects the line
+
+    } else if (left_tracker_value > 700 && line_tracker_value <= 700) {
+
+      left(50);
+
+      // IrReceiver.resume();  // Prepare to receive the next signal //  left if the left sensor detects the line
+
+    } else if (right_tracker_value > 700 && line_tracker_value <= 700) {
+
+      right(50);
+
+      //IrReceiver.resume();  // Prepare to receive the next signal //  right if the right sensor detects the line
+
+    } else if (right_tracker_value >= 1000 && line_tracker_value >= 1000 && left_tracker_value >= 1000) {
+
+      stopped();  // Stop if no line is detected by any sensor
+
+                  // IrReceiver.resume();  // Prepare to receive the next signal
+
+    }
+
+  }
+
+  if (avoidModel == true) {
+
+    sensor();  // Check distance using ultrasonic sensor
+
+
+
+
+
+    delay(500);
+
+
+
+
+
+    if (distance > threshold) {
+
+      stopped();  // Move forward if no obstacle
+
+    } else {
+
+      forward(60);        // Stop the car if obstacle detected
+
+      
+
+    }
+
+  }
+
+}
+
+
+
+
+
+// Motor control functions
+
+void forward(int x) {
+
+  digitalWrite(AIN, HIGH);
+
+  digitalWrite(STBY, HIGH);
+
+  analogWrite(PWMA, x);
+
+  digitalWrite(left_BIN, HIGH);
+
+  analogWrite(PWMB, x);
+
+}
+
+
+
+
+
+void stopped() {
+
+  digitalWrite(AIN, LOW);
+
+  digitalWrite(STBY, HIGH);
+
+  analogWrite(PWMA, 0);
+
+  digitalWrite(left_BIN, LOW);
+
+  analogWrite(PWMB, 0);
+
+}
+
+
+
+
+
+void backward(int x) {
+
+  digitalWrite(AIN, LOW);
+
+  digitalWrite(STBY, HIGH);
+
+  analogWrite(PWMA, x);
+
+  digitalWrite(left_BIN, LOW);
+
+  analogWrite(PWMB, x);
+
+}
+
+
+
+
+
+void left(int x) {
+
+  digitalWrite(AIN, HIGH);
+
+  digitalWrite(STBY, HIGH);
+
+  analogWrite(PWMA, x);
+
+  digitalWrite(left_BIN, LOW);
+
+  analogWrite(PWMB, x);
+
+}
+
+
+
+
+
+void right(int x) {
+
+  digitalWrite(AIN, LOW);
+
+  digitalWrite(STBY, HIGH);
+
+  analogWrite(PWMA, x);
+
+  digitalWrite(left_BIN, HIGH);
+
+  analogWrite(PWMB, x);
+
+}
+
+void rightforward(int x) {
+
+  digitalWrite(AIN, HIGH);       // right side forward
+
+  digitalWrite(STBY, HIGH);      // Enable motor
+
+  analogWrite(PWMA, x / 2);      // Set motor speed for right side
+
+  digitalWrite(left_BIN, HIGH);  // left side forward
+
+  analogWrite(PWMB, x);          // Set motor speed for left side
+
+}
+
+void leftforward(int x) {
+
+  digitalWrite(AIN, HIGH);       // right side forward
+
+  digitalWrite(STBY, HIGH);      // Enable motor
+
+  analogWrite(PWMA, x);          // Set motor speed for right side
+
+  digitalWrite(left_BIN, HIGH);  // left side forward
+
+  analogWrite(PWMB, x / 2);      // Set motor speed for left side
+
+}
+
+void rightbackward(int x) {
+
+  digitalWrite(AIN, LOW);       // right side backward
+
+  digitalWrite(STBY, HIGH);     // Enable motor
+
+  analogWrite(PWMA, x / 2);     // Set motor speed for right side
+
+  digitalWrite(left_BIN, LOW);  // left side backward
+
+  analogWrite(PWMB, x);         // Set motor speed for left side
+
+}
+
+void leftbackward(int x) {
+
+  digitalWrite(AIN, LOW);       // right side backward
+
+  digitalWrite(STBY, HIGH);     // Enable motor
+
+  analogWrite(PWMA, x);         // Set motor speed for right side
+
+  digitalWrite(left_BIN, LOW);  // left side backward
+
+  analogWrite(PWMB, x / 2);     // Set motor speed for left side
+
+}
+
+void spin(int x) {
+
+  digitalWrite(AIN, HIGH);
+
+  digitalWrite(STBY, HIGH);
+
+  analogWrite(PWMA, x);
+
+  digitalWrite(left_BIN, LOW);
+
+  analogWrite(PWMB, x);
+
+}
+
+void dance(int x) {
+
+  for (post = 0; post <= 180; post += 1) {  // goes from 0 degrees to 180 degrees
+
+    // in steps of 1 degree
+
+    myservo.write(pos);  // tell servo to go to position in variable 'pos'
+
+    delay(15);           // waits 15 ms for the servo to reach the position
+
+  }
+
+  for (post = 180; post >= 0; post -= 1) {  // goes from 180 degrees to 0 degrees
+
+    myservo.write(post);                    // tell servo to go to position in variable 'pos'
+
+    delay(15);                              // waits 15 ms for the servo to reach the position
+
+  }
+
+
+
+
+
+  backward(64);
+
+  delay(500);
+
+  rightforward(100);
+
+  delay(500);
+
+  leftbackward(100);
+
+  delay(500);
+
+  spin(50);
+
+  delay(50);
+
+  backward(64);
+
+  delay(500);
+
+  rightforward(100);
+
+  delay(500);
+
+  leftbackward(100);
+
+  delay(500);
+
+  spin(50);
+
+  delay(50);
+
+  for (post = 0; post <= 180; post += 1) {  // goes from 0 degrees to 180 degrees
+
+    // in steps of 1 degree
+
+    myservo.write(pos);  // tell servo to go to position in variable 'pos'
+
+    delay(15);           // waits 15 ms for the servo to reach the position
+
+  }
+
+  for (post = 180; post >= 0; post -= 1) {  // goes from 180 degrees to 0 degrees
+
+    myservo.write(post);                    // tell servo to go to position in variable 'pos'
+
+    delay(15);                              // waits 15 ms for the servo to reach the position
+
+    myservo.write(90); 
+
+  }
+
+}
+
+void v_lap(int x) {
+
+  forward(100);
+
+  delay(4000);
+
+  rightforward(200);
+
+  delay(2000);
+
+  forward(100);
+
+  delay(4000);
+
+  rightforward(200);
+
+}
+
+void sensor() {
+
+  // Send ultrasonic pulse
+
+  digitalWrite(trigPIN, LOW);
+
+  delayMicroseconds(2);
+
+  digitalWrite(trigPIN, HIGH);
+
+  delayMicroseconds(10);
+
+  digitalWrite(trigPIN, LOW);
+
+  // Measure pulse duration
+
+  float duration = pulseIn(echoPIN, HIGH);
+
+  // Calculate distance in cm
+
+  distance = (duration / 2) * 0.0343;
+
+  // Print distance to Serial Monitor
+
+  Serial.print("Distance: ");
+
+  if (distance >= 400 || distance <= 2) {
+
+    Serial.println("Out of Range");
+
+    distance = 400;  // Treat out-of-range as max distance
+
+  } else {
+
+    Serial.print(distance);
+
+    Serial.println(" cm");
+
+  }
+
+}
